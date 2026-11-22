@@ -2,17 +2,19 @@ name: AI LLM CI/CD
 
 on:
   pull_request:
-   - branches:
+    branches:
       - main
   push:
     branches:
       - main
   schedule:
-    - cron: "* 20 * * *"
+    - cron: "30 16 * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -30,6 +32,57 @@ jobs:
 
       - name: Run tests
         env:
-          FOUNDRY_ENDPOINT: ${{ secrets.FOUNDRY_ENDPOINT }}
-          FOUNDRY_API_KEY: ${{ secrets.FOUNDRY_API_KEY }}
-        run: pytest --ignore=tests/test_UIplaywright.py -q
+          FOUNDRY_ENDPOINT: ${{ secrets.ENDPOINT }}
+          FOUNDRY_API_KEY: ${{ secrets.APIKEY }}
+        run: pytest --ignore=tests/test_UIplaywright.py --alluredir=allure-results -q
+
+      - name: Verify Allure Results
+        if: always()
+        run: |
+          echo "Listing allure-results contents:"
+          ls -la allure-results || echo "No allure-results directory found"
+
+      - name: Install Allure CLI
+        if: always()
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip wget
+          wget https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.zip
+          unzip allure-2.27.0.zip
+          sudo mv allure-2.27.0 /opt/allure
+          sudo ln -s /opt/allure/bin/allure /usr/bin/allure
+          allure --version
+
+      - name: Generate Allure Report
+        if: always()
+        run: |
+          allure generate allure-results -o allure-report --clean
+
+      - name: Upload Allure Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-html-report
+          path: allure-report
+          if-no-files-found: error
+
+  publish-report:
+    needs: test
+    if: ${{ always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.test.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Allure Report
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-html-report
+          path: allure-report
+
+      - name: Deploy Allure Report to GitHub Pages
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: allure-report
