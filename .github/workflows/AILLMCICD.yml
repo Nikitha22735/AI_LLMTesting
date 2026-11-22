@@ -13,6 +13,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    environment: OpenAiCreds
     permissions:
       contents: read
     steps:
@@ -30,10 +31,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify LLM credentials
+        env:
+          FOUNDRY_ENDPOINT: ${{ secrets.FOUNDRY_ENDPOINT || secrets.ENDPOINT }}
+          FOUNDRY_API_KEY: ${{ secrets.FOUNDRY_API_KEY || secrets.APIKEY }}
+        run: |
+          if [ -z "$FOUNDRY_ENDPOINT" ]; then
+            echo "::error::Set the FOUNDRY_ENDPOINT (or ENDPOINT) Actions secret."
+            exit 1
+          fi
+          if [ -z "$FOUNDRY_API_KEY" ]; then
+            echo "::error::Set the FOUNDRY_API_KEY (or APIKEY) Actions secret."
+            exit 1
+          fi
+
       - name: Run tests
         env:
-          FOUNDRY_ENDPOINT: ${{ secrets.ENDPOINT }}
-          FOUNDRY_API_KEY: ${{ secrets.APIKEY }}
+          FOUNDRY_ENDPOINT: ${{ secrets.FOUNDRY_ENDPOINT || secrets.ENDPOINT }}
+          FOUNDRY_API_KEY: ${{ secrets.FOUNDRY_API_KEY || secrets.APIKEY }}
         run: pytest --ignore=tests/test_UIplaywright.py --alluredir=allure-results -q
 
       - name: Verify Allure Results
@@ -58,9 +73,28 @@ jobs:
         run: |
           allure generate allure-results -o allure-report --clean
 
-       # 8️⃣ Deploy to GitHub Pages
-      - name: Deploy Allure Report to GitHub Pages
+      - name: Upload Allure Report
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-html-report
+          path: allure-report
+          if-no-files-found: error
+
+  publish-report:
+    needs: test
+    if: ${{ always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.test.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Allure Report
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-html-report
+          path: allure-report
+
+      - name: Deploy Allure Report to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
