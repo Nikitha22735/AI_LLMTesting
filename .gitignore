@@ -1,5 +1,6 @@
 .env
 allureresults
+allure-results
 __pycache__
 .deepeval
 .pytest_cache

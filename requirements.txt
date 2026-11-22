@@ -1,0 +1,7 @@
+playwright
+pytest
+pytest-playwright
+allure-pytest
+deepeval
+openai
+python-dotenv
